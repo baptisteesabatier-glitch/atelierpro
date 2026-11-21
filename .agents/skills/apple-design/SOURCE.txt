@@ -1,0 +1,2 @@
+Skill apple-design — source : https://github.com/emilkowalski/skills (skill d'Emil Kowalski).
+Le fichier SKILL.md est reproduit tel quel ; voir LICENSE pour les termes.
