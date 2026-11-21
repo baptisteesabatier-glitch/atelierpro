@@ -1,0 +1,133 @@
+LICENCE COMMERCIALE ATELIERPRO 2.0
+Version 1.0 — novembre 2026
+
+Ce document est le modèle de licence accompagnant la cession d’AtelierPro 2.0.
+Il doit être adapté et validé par un conseil juridique avant toute signature :
+il ne constitue pas un avis juridique.
+
+──────────────────────────────────────────────────────────────────────────────
+1. OBJET
+──────────────────────────────────────────────────────────────────────────────
+La présente licence porte sur le logiciel AtelierPro 2.0 (le « Logiciel »),
+comprenant le code source, les migrations de base de données, les scripts, la
+documentation et les ressources graphiques fournis par le concédant.
+
+──────────────────────────────────────────────────────────────────────────────
+2. DROITS ACCORDÉS
+──────────────────────────────────────────────────────────────────────────────
+Sous réserve du paiement intégral du prix et du respect des conditions
+ci-dessous, le concédant accorde au licencié :
+
+a) un droit d’utilisation **perpétuel**, **non exclusif** et **non
+   transférable** du Logiciel ;
+b) le droit d’**installer** le Logiciel sur ses propres serveurs, pour
+   l’exploitation de son activité ;
+c) le droit de **modifier** le code source pour ses besoins internes ;
+d) le droit de **conserver une copie de sauvegarde** et une copie de
+   préparation (recette, tests) ;
+e) le droit de faire exécuter le Logiciel par ses prestataires, pour son
+   compte exclusif.
+
+Le nombre d’installations simultanées en production est précisé au contrat.
+À défaut, une installation en production par entité juridique licenciée est
+autorisée.
+
+──────────────────────────────────────────────────────────────────────────────
+3. RESTRICTIONS
+──────────────────────────────────────────────────────────────────────────────
+Sauf autorisation écrite du concédant, le licencié s’interdit de :
+
+a) revendre, louer, prêter, distribuer ou mettre à disposition le Logiciel ou
+   son code source, en tout ou partie, à un tiers ;
+b) accorder une sous-licence ou exploiter le Logiciel en mode hébergé pour le
+   compte de tiers (SaaS) ;
+c) publier le code source, y compris sur un dépôt public ;
+d) supprimer ou altérer les mentions de copyright et de licence ;
+e) utiliser le Logiciel pour un usage illicite ou contraire à la réglementation.
+
+──────────────────────────────────────────────────────────────────────────────
+4. PROPRIÉTÉ INTELLECTUELLE
+──────────────────────────────────────────────────────────────────────────────
+Le Logiciel demeure la propriété du concédant. La présente licence ne
+transfère aucun droit de propriété intellectuelle, hormis les droits
+d’utilisation expressément énumérés à l’article 2.
+
+Les composants open source intégrés restent soumis à leurs licences
+respectives, listées dans `docs/LICENCES.md`. Ces licences priment sur la
+présente en ce qui concerne ces composants.
+
+──────────────────────────────────────────────────────────────────────────────
+5. DONNÉES ET CONFIDENTIALITÉ
+──────────────────────────────────────────────────────────────────────────────
+Le Logiciel est installé sur l’infrastructure du licencié. Aucune donnée
+d’exploitation n’est transmise au concédant.
+
+Le licencié est seul responsable :
+a) des données personnelles de ses clients, de leur licéité, de leur
+   conservation et de l’exercice des droits des personnes concernées ;
+b) de la sécurité de son serveur, de ses sauvegardes et de ses accès ;
+c) du respect des obligations qui lui incombent en qualité de responsable de
+   traitement.
+
+Le Logiciel ne comporte volontairement aucun champ destiné à stocker des codes
+de déverrouillage d’appareil ou des mots de passe appartenant aux clients.
+
+──────────────────────────────────────────────────────────────────────────────
+6. GARANTIE LIMITÉE
+──────────────────────────────────────────────────────────────────────────────
+Le concédant garantit que le Logiciel, tel que livré, exécute substantiellement
+les fonctions décrites dans la documentation, pendant **trente (30) jours** à
+compter de la livraison.
+
+La garantie ne couvre pas : les modifications apportées par le licencié ou un
+tiers, les environnements non conformes aux prérequis documentés, les
+défaillances d’hébergement, de réseau ou de PostgreSQL, ni les erreurs de
+saisie ou d’exploitation.
+
+Le Logiciel est fourni « en l’état » pour tout usage non couvert par la
+présente garantie.
+
+──────────────────────────────────────────────────────────────────────────────
+7. LIMITATION DE RESPONSABILITÉ
+──────────────────────────────────────────────────────────────────────────────
+La responsabilité du concédant, toutes causes confondues, est plafonnée au
+montant effectivement payé pour la licence.
+
+Le concédant n’est pas responsable des dommages indirects : perte
+d’exploitation, perte de chiffre d’affaires, perte de données, atteinte à
+l’image, sauf faute lourde ou dolosive.
+
+──────────────────────────────────────────────────────────────────────────────
+8. SUPPORT ET MAINTENANCE
+──────────────────────────────────────────────────────────────────────────────
+La présente licence n’inclut aucun abonnement obligatoire. Toute prestation de
+support, de maintenance ou d’évolution fait l’objet d’un contrat distinct.
+
+Les mises à jour éventuellement fournies sont couvertes par la présente
+licence, sans obligation de fourniture.
+
+──────────────────────────────────────────────────────────────────────────────
+9. DURÉE ET RÉSILIATION
+──────────────────────────────────────────────────────────────────────────────
+La licence est consentie pour la durée de protection des droits d’auteur.
+
+Elle est résiliée de plein droit, sans formalité, en cas de violation grave des
+articles 3 ou 4. Le licencié doit alors cesser toute utilisation et détruire
+les copies du Logiciel, à l’exception des données qui doivent être conservées
+au titre de ses obligations légales.
+
+──────────────────────────────────────────────────────────────────────────────
+10. DROIT APPLICABLE
+──────────────────────────────────────────────────────────────────────────────
+La présente licence est soumise au droit français. Tout litige relève des
+tribunaux compétents du siège du concédant, sauf disposition légale impérative
+contraire.
+
+──────────────────────────────────────────────────────────────────────────────
+ANNEXE — COMPOSANTS TIERS
+──────────────────────────────────────────────────────────────────────────────
+Voir `docs/LICENCES.md` : React, Motion, React Router (MIT), Express, Zod,
+bcryptjs, Helmet, PDFKit (MIT), Prisma et TypeScript (Apache-2.0), dotenv
+(BSD-2-Clause), PostgreSQL (licence PostgreSQL), Node.js (MIT).
+
+Copyright © 2026 — AtelierPro. Tous droits réservés.

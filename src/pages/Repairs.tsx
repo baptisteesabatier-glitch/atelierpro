@@ -13,39 +13,28 @@ import {
 import { Icon } from '../components/Icon';
 import NewRepairDialog from '../components/NewRepairDialog';
 import RepairDetail from '../components/RepairDetail';
-import {
-  PRIORITY_META,
-  STATUS_FLOW,
-  STATUS_META,
-  useStore,
-  type Repair,
-} from '../lib/store';
+import { api, type Repair, type RepairStatus } from '../lib/api';
+import { useApi } from '../lib/hooks';
+import { PRIORITY_META, STATUS_META } from '../lib/domain';
 import { day, money } from '../lib/format';
+import { useAuth } from '../lib/auth';
 
-type Filter = 'active' | 'all' | 'parts' | 'ready' | 'delivered';
-type Sort = 'recent' | 'priority' | 'estimate';
+type Filter = 'active' | 'all' | 'ready' | 'returned' | 'cancelled';
+type Sort = 'recent' | 'priority' | 'estimate' | 'oldest';
 
-const PRIORITY_WEIGHT = { urgent: 0, normal: 1, low: 2 } as const;
+const PRIORITY_WEIGHT = { URGENT: 0, NORMAL: 1, LOW: 2 } as const;
 
-function matchesFilter(repair: Repair, filter: Filter): boolean {
-  switch (filter) {
-    case 'active':
-      return repair.status !== 'delivered';
-    case 'all':
-      return true;
-    case 'delivered':
-      return repair.status === 'delivered';
-    case 'parts':
-      return repair.status === 'parts' || repair.status === 'diagnostic';
-    case 'ready':
-      return repair.status === 'ready';
-    default:
-      return true;
-  }
-}
+const FILTERS: Record<Filter, (repair: Repair) => boolean> = {
+  active: (repair) => !['RETURNED', 'CANCELLED'].includes(repair.status),
+  all: () => true,
+  ready: (repair) => repair.status === 'READY',
+  returned: (repair) => repair.status === 'RETURNED',
+  cancelled: (repair) => repair.status === 'CANCELLED',
+};
 
 export default function Repairs() {
-  const { repairs, clientOf } = useStore();
+  const { can } = useAuth();
+  const repairs = useApi(() => api.repairs(), []);
   const [params, setParams] = useSearchParams();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('active');
@@ -53,6 +42,7 @@ export default function Repairs() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const openId = params.get('open');
+  const rows = repairs.data?.repairs ?? [];
 
   const openRepair = (id: string) => {
     const next = new URLSearchParams(params);
@@ -66,14 +56,32 @@ export default function Repairs() {
     setParams(next, { replace: true });
   };
 
-  const rows = useMemo(() => {
+  const counts = useMemo(
+    () => ({
+      all: rows.length,
+      active: rows.filter(FILTERS.active).length,
+      ready: rows.filter((repair) => repair.status === 'READY').length,
+      returned: rows.filter((repair) => repair.status === 'RETURNED').length,
+      cancelled: rows.filter((repair) => repair.status === 'CANCELLED').length,
+    }),
+    [rows],
+  );
+
+  const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return repairs
-      .filter((repair) => matchesFilter(repair, filter))
+    return rows
+      .filter(FILTERS[filter])
       .filter((repair) => {
         if (!q) return true;
-        const client = clientOf(repair.clientId);
-        return [repair.ref, repair.device, repair.issue, client?.name ?? '', repair.technician]
+        return [
+          repair.reference,
+          repair.brand,
+          repair.model,
+          repair.issue,
+          repair.client.name,
+          repair.client.phone,
+          repair.assignedTo?.name ?? '',
+        ]
           .join(' ')
           .toLowerCase()
           .includes(q);
@@ -82,24 +90,14 @@ export default function Repairs() {
         if (sort === 'priority') {
           return (
             PRIORITY_WEIGHT[a.priority] - PRIORITY_WEIGHT[b.priority] ||
-            b.createdAt.localeCompare(a.createdAt)
+            Date.parse(b.receivedAt) - Date.parse(a.receivedAt)
           );
         }
-        if (sort === 'estimate') return b.estimate - a.estimate;
-        return b.createdAt.localeCompare(a.createdAt);
+        if (sort === 'estimate') return b.estimateCents - a.estimateCents;
+        if (sort === 'oldest') return Date.parse(a.receivedAt) - Date.parse(b.receivedAt);
+        return Date.parse(b.receivedAt) - Date.parse(a.receivedAt);
       });
-  }, [repairs, filter, query, sort, clientOf]);
-
-  const counts = useMemo(
-    () => ({
-      all: repairs.length,
-      active: repairs.filter((repair) => repair.status !== 'delivered').length,
-      parts: repairs.filter((repair) => repair.status === 'parts').length,
-      ready: repairs.filter((repair) => repair.status === 'ready').length,
-      delivered: repairs.filter((repair) => repair.status === 'delivered').length,
-    }),
-    [repairs],
-  );
+  }, [rows, filter, query, sort]);
 
   return (
     <div className="page">
@@ -108,8 +106,8 @@ export default function Repairs() {
           <p className="eyebrow">Atelier</p>
           <h2 className="page__title">Réparations</h2>
           <p className="page__lede">
-            {counts.active} dossiers ouverts · {counts.ready} prêts à retirer ·{' '}
-            {counts.delivered} livrés
+            {counts.active} dossiers ouverts · {counts.ready} prêts à retirer · {counts.returned}{' '}
+            restitués
           </p>
         </div>
         <div className="page__actions">
@@ -150,9 +148,9 @@ export default function Repairs() {
             options={[
               { value: 'active', label: 'Actives', count: counts.active },
               { value: 'all', label: 'Toutes', count: counts.all },
-              { value: 'parts', label: 'En attente', count: counts.parts },
               { value: 'ready', label: 'Prêtes', count: counts.ready },
-              { value: 'delivered', label: 'Livrées', count: counts.delivered },
+              { value: 'returned', label: 'Restituées', count: counts.returned },
+              { value: 'cancelled', label: 'Annulées', count: counts.cancelled },
             ]}
           />
 
@@ -164,15 +162,36 @@ export default function Repairs() {
               onChange={(event) => setSort(event.target.value as Sort)}
             >
               <option value="recent">Plus récentes</option>
+              <option value="oldest">Plus anciennes</option>
               <option value="priority">Priorité</option>
-              <option value="estimate">Devis décroissant</option>
+              <option value="estimate">Montant décroissant</option>
             </select>
             <Icon name="chevronDown" size={14} className="sort__chevron" />
           </label>
         </div>
       </section>
 
-      {rows.length === 0 ? (
+      {repairs.error && (
+        <EmptyState
+          title="Impossible de charger les dossiers"
+          message={repairs.error}
+          action={
+            <Button variant="secondary" icon="clock" onClick={repairs.reload}>
+              Réessayer
+            </Button>
+          }
+        />
+      )}
+
+      {!repairs.error && repairs.loading && !repairs.data && (
+        <div className="stack">
+          <div className="skeleton" />
+          <div className="skeleton" />
+          <div className="skeleton" />
+        </div>
+      )}
+
+      {!repairs.error && repairs.data && visible.length === 0 && (
         <EmptyState
           title="Aucun dossier"
           message={
@@ -181,12 +200,16 @@ export default function Repairs() {
               : 'Aucune réparation dans cette catégorie pour le moment.'
           }
           action={
-            <Button variant="secondary" icon="plus" onClick={() => setDialogOpen(true)}>
-              Créer un dossier
-            </Button>
+            can('canEditRepairs') ? (
+              <Button variant="secondary" icon="plus" onClick={() => setDialogOpen(true)}>
+                Créer un dossier
+              </Button>
+            ) : undefined
           }
         />
-      ) : (
+      )}
+
+      {visible.length > 0 && (
         <section className="table" aria-label="Liste des réparations">
           <div className="table__head" role="row">
             <span>Réf.</span>
@@ -194,71 +217,77 @@ export default function Repairs() {
             <span>Appareil</span>
             <span>Statut</span>
             <span>Priorité</span>
-            <span className="table__right">Devis</span>
+            <span className="table__right">Montant</span>
           </div>
 
           <div className="table__body">
             <AnimatePresence initial={false}>
-              {rows.map((repair) => {
-                const client = clientOf(repair.clientId);
-                return (
-                  <motion.div
-                    key={repair.id}
-                    layout
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                    transition={spring}
+              {visible.map((repair) => (
+                <motion.div
+                  key={repair.id}
+                  layout
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={spring}
+                >
+                  <button
+                    type="button"
+                    className="table__row"
+                    onClick={() => openRepair(repair.id)}
                   >
-                    <button
-                      type="button"
-                      className="table__row"
-                      onClick={() => openRepair(repair.id)}
-                    >
-                      <span className="cell cell--ref">
-                        {repair.ref}
-                        <em className="cell__sub">{day(repair.createdAt)}</em>
+                    <span className="cell cell--ref">
+                      {repair.reference}
+                      <em className="cell__sub">{day(repair.receivedAt)}</em>
+                    </span>
+                    <span className="cell cell--client">
+                      <Avatar name={repair.client.name} size="sm" />
+                      <span className="cell__stack">
+                        <span className="cell__strong">{repair.client.name}</span>
+                        <span className="cell__sub">{repair.client.city ?? '—'}</span>
                       </span>
-                      <span className="cell cell--client">
-                        <Avatar name={client?.name ?? 'Client'} size="sm" />
-                        <span className="cell__stack">
-                          <span className="cell__strong">{client?.name ?? 'Client'}</span>
-                          <span className="cell__sub">{client?.city}</span>
-                        </span>
+                    </span>
+                    <span className="cell cell--device">
+                      <span className="cell__strong">
+                        {repair.brand} {repair.model}
                       </span>
-                      <span className="cell cell--device">
-                        <span className="cell__strong">{repair.device}</span>
-                        <span className="cell__sub">{repair.technician}</span>
-                      </span>
-                      <span className="cell cell--status">
-                        <Badge tone={STATUS_META[repair.status].tone} dot>
-                          {STATUS_META[repair.status].short}
-                        </Badge>
-                      </span>
-                      <span className="cell cell--priority">
-                        <Badge tone={PRIORITY_META[repair.priority].tone}>
-                          {PRIORITY_META[repair.priority].label}
-                        </Badge>
-                      </span>
-                      <span className="cell cell--money table__right">
-                        {money(repair.estimate)}
-                        <Icon name="chevronRight" size={15} className="cell__chevron" />
-                      </span>
-                    </button>
-                  </motion.div>
-                );
-              })}
+                      <span className="cell__sub">{repair.assignedTo?.name ?? 'Non affecté'}</span>
+                    </span>
+                    <span className="cell cell--status">
+                      <Badge tone={STATUS_META[repair.status as RepairStatus].tone} dot>
+                        {STATUS_META[repair.status as RepairStatus].short}
+                      </Badge>
+                    </span>
+                    <span className="cell cell--priority">
+                      <Badge tone={PRIORITY_META[repair.priority].tone}>
+                        {PRIORITY_META[repair.priority].label}
+                      </Badge>
+                    </span>
+                    <span className="cell cell--money table__right">
+                      {money(repair.estimateCents / 100)}
+                      <Icon name="chevronRight" size={15} className="cell__chevron" />
+                    </span>
+                  </button>
+                </motion.div>
+              ))}
             </AnimatePresence>
           </div>
         </section>
       )}
 
       <p className="table__footnote">
-        {rows.length} dossier(s) affiché(s) · {STATUS_FLOW.length} étapes de production
+        {visible.length} dossier(s) affiché(s) · {counts.all} au total · données synchronisées avec
+        PostgreSQL
       </p>
 
       <NewRepairDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
-      <RepairDetail repairId={openId} onClose={closeRepair} />
+      <RepairDetail
+        repairId={openId}
+        onClose={closeRepair}
+        onChanged={() => {
+          repairs.reload();
+        }}
+      />
     </div>
   );
 }

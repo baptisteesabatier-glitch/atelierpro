@@ -1,14 +1,25 @@
 {
   "name": "atelierpro",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
-  "description": "AtelierPro — gestion d'atelier de réparation",
+  "description": "AtelierPro 2.0 — gestion d'atelier de réparation (React + Express + PostgreSQL)",
   "scripts": {
     "dev": "vite",
+    "dev:api": "npm --prefix server run dev",
     "build": "tsc --noEmit && vite build",
-    "typecheck": "tsc --noEmit",
-    "preview": "vite preview"
+    "build:server": "npm --prefix server run build",
+    "build:all": "npm run build && npm run build:server",
+    "typecheck": "tsc --noEmit && npm --prefix server run typecheck",
+    "test": "npm --prefix server test",
+    "start": "npm --prefix server start",
+    "preview": "vite preview",
+    "install:all": "npm install && npm --prefix server install",
+    "db:migrate": "npm --prefix server run db:migrate",
+    "db:seed-demo": "npm --prefix server run db:seed-demo --",
+    "admin:create": "npm --prefix server run admin:create --",
+    "backup": "npm --prefix server run backup --",
+    "restore": "npm --prefix server run restore --"
   },
   "dependencies": {
     "motion": "^12.0.0",

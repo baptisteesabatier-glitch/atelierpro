@@ -1,0 +1,248 @@
+// AtelierPro 2.0 — modèle de données PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  TECHNICIAN
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  URGENT
+}
+
+enum DeviceCategory {
+  PHONE
+  LAPTOP
+  TABLET
+  CONSOLE
+  OTHER
+}
+
+enum RepairStatus {
+  NEW
+  DIAGNOSIS
+  QUOTE_SENT
+  AWAITING_APPROVAL
+  PART_ORDERED
+  IN_PROGRESS
+  REPAIRED
+  READY
+  RETURNED
+  CANCELLED
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REFUSED
+  EXPIRED
+}
+
+enum QuoteItemKind {
+  LABOR
+  PART
+  SUPPLY
+}
+
+model User {
+  id          String    @id @default(cuid())
+  email       String    @unique
+  name        String
+  passwordHash String
+  role        Role      @default(TECHNICIAN)
+  active      Boolean   @default(true)
+  /// Permissions fines du technicien (ex. { "canChangeStatus": true })
+  permissions Json?
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  sessions Session[]
+  assigned Repair[]      @relation("RepairAssignee")
+  notes    Note[]
+  events   RepairEvent[]
+  auditLogs AuditLog[]
+
+  @@index([role])
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+  lastUsedAt DateTime @default(now())
+  ip         String?
+  userAgent  String?
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Client {
+  id         String   @id @default(cuid())
+  name       String
+  email      String?
+  phone      String
+  address    String?
+  postalCode String?
+  city       String?
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  repairs Repair[]
+
+  @@index([name])
+  @@index([phone])
+}
+
+model Repair {
+  id             String         @id @default(cuid())
+  reference      String         @unique
+  clientId       String
+  client         Client         @relation(fields: [clientId], references: [id])
+  category       DeviceCategory @default(PHONE)
+  brand          String
+  model          String
+  serialNumber   String?
+  issue          String
+  diagnosis      String?
+  estimateCents  Int            @default(0)
+  status         RepairStatus   @default(NEW)
+  priority       Priority       @default(NORMAL)
+  assignedToId   String?
+  assignedTo     User?          @relation("RepairAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  trackingToken  String         @unique
+  receivedAt     DateTime       @default(now())
+  readyAt        DateTime?
+  returnedAt     DateTime?
+  cancelledAt    DateTime?
+  paidAmountCents Int           @default(0)
+  paidAt         DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  notes  Note[]
+  events RepairEvent[]
+  quotes Quote[]
+
+  @@index([status])
+  @@index([clientId])
+  @@index([assignedToId])
+  @@index([receivedAt])
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  repairId  String
+  repair    Repair   @relation(fields: [repairId], references: [id], onDelete: Cascade)
+  authorId  String?
+  author    User?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([repairId])
+}
+
+model RepairEvent {
+  id         String        @id @default(cuid())
+  repairId   String
+  repair     Repair        @relation(fields: [repairId], references: [id], onDelete: Cascade)
+  type       String
+  fromStatus RepairStatus?
+  toStatus   RepairStatus?
+  message    String?
+  actorId    String?
+  actor      User?         @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  createdAt  DateTime      @default(now())
+
+  @@index([repairId])
+}
+
+model Quote {
+  id          String      @id @default(cuid())
+  number      String      @unique
+  repairId    String
+  repair      Repair      @relation(fields: [repairId], references: [id], onDelete: Cascade)
+  status      QuoteStatus @default(DRAFT)
+  vatRate     Float       @default(20)
+  subtotalCents Int       @default(0)
+  vatCents    Int         @default(0)
+  totalCents  Int         @default(0)
+  notes       String?
+  issuedAt    DateTime    @default(now())
+  validUntil  DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  items QuoteItem[]
+
+  @@index([repairId])
+  @@index([status])
+}
+
+model QuoteItem {
+  id             String        @id @default(cuid())
+  quoteId        String
+  quote          Quote         @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  kind           QuoteItemKind @default(LABOR)
+  label          String
+  quantity       Float         @default(1)
+  unitPriceCents Int           @default(0)
+  position       Int           @default(0)
+
+  @@index([quoteId])
+}
+
+/// Réglages uniques de l'installation (identité, TVA, numérotation)
+model Setting {
+  id               String   @id @default("main")
+  companyName      String   @default("AtelierPro")
+  legalName        String   @default("")
+  address          String   @default("")
+  postalCode       String   @default("")
+  city             String   @default("")
+  phone            String   @default("")
+  email            String   @default("")
+  siret            String   @default("")
+  vatNumber        String   @default("")
+  vatRate          Float    @default(20)
+  logoDataUrl      String?
+  quotePrefix      String   @default("DEV")
+  depositPrefix    String   @default("DEP")
+  returnPrefix     String   @default("RES")
+  quoteValidityDays Int     @default(30)
+  footer           String   @default("")
+  monthlyGoalCents Int      @default(150000)
+  updatedAt        DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?
+  meta      Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorId])
+}

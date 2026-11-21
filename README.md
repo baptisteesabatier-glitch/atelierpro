@@ -1,80 +1,116 @@
-# AtelierPro
+# AtelierPro 2.0
 
-Application de gestion d'atelier de réparation (téléphones, ordinateurs, tablettes, consoles) :
-tableau de bord, dossiers de réparation, clients, paramètres.
+Logiciel de gestion d’atelier de réparation : dossiers, clients, devis PDF,
+suivi client public, tableau de bord et sauvegardes. Conçu pour être installé
+sur **votre** serveur, sans abonnement ni service externe.
 
-**Démo en ligne :** https://atelierpro-onz0hg.freebuff.site
+- **Front** : React 19 + TypeScript + Vite, design bleu nuit / blanc cassé /
+  turquoise, animations Motion.
+- **API** : Node.js + Express, sessions sécurisées, validation Zod, rôles et
+  permissions côté serveur.
+- **Base** : PostgreSQL + Prisma (migrations versionnées).
+- **Documents** : devis, bons de dépôt et de restitution en PDF.
+- **Déploiement** : Docker Compose ou installation manuelle.
 
-> Périmètre assumé : c'est aujourd'hui un **prototype d'interface fonctionnel côté client**,
-> pas un SaaS multi-utilisateurs. La section « Ce qui n'existe pas encore » est volontairement
-> explicite pour éviter les malentendus lors d'une revue ou d'une mise en vente.
+Aucune clé API payante, aucune base de données propriétaire, aucun compte
+chez un éditeur tiers.
 
-## Stack
+---
 
-- React 19 + TypeScript (strict), Vite 6
-- React Router 7 (SPA, réécriture serveur)
-- Motion (ex-Framer Motion) pour les ressorts et les transitions
-- CSS écrit à la main (aucun framework UI), système de design dans `src/styles.css`
-- Aucune dépendance payante, aucun service tiers, aucune police distante
-
-## Démarrer
+## Démarrage rapide (Docker)
 
 ```bash
-npm install
-npm run dev      # http://127.0.0.1:5173
-npm run build    # tsc --noEmit && vite build  → dist/
-npm run preview
+cp .env.example .env        # renseignez POSTGRES_PASSWORD et APP_ORIGIN
+docker compose up -d --build
+
+# premier administrateur (mot de passe généré et affiché une seule fois)
+docker compose exec app node dist/scripts/create-admin.js \
+  --email vous@atelier.fr --name "Prénom Nom"
 ```
+
+Ouvrez `http://localhost:4000`, connectez-vous, puis changez le mot de passe
+dans **Paramètres → Sécurité**.
+
+Jeu de démonstration (base vide uniquement) :
+
+```bash
+docker compose exec app node dist/scripts/seed-demo.js --password "Demo2026!Demo"
+```
+
+Détails, reverse proxy et dépannage : [docs/INSTALLATION.md](./docs/INSTALLATION.md).
+
+## Développement
+
+```bash
+npm run install:all     # front + serveur
+cp server/.env.example server/.env   # DATABASE_URL locale
+npm run db:migrate
+npm run admin:create -- --email admin@local.test --name "Admin"
+
+npm run dev:api         # API sur http://127.0.0.1:4000
+npm run dev             # Vite sur http://127.0.0.1:5173 (proxy /api)
+```
+
+## Vérifications
+
+```bash
+npm run typecheck       # front + serveur
+npm run build:all       # build Vite + compilation API
+npm test                # 35 tests (PostgreSQL embarqué, aucun service requis)
+```
+
+La suite couvre l’authentification, le CSRF, les rôles et permissions, les
+clients, les dossiers, les dix statuts, les notes, les devis (HT/TVA/TTC et
+PDF), le suivi public, les sauvegardes et le tableau de bord.
+
+## Fonctionnalités
+
+| Domaine | Contenu |
+| --- | --- |
+| Dossiers | référence `AP-AAAA-NNNN`, appareil, panne, diagnostic, priorité, technicien, historique complet |
+| Statuts | nouvel appareil, diagnostic, devis envoyé, attente d’accord, pièce commandée, en cours, terminé, prêt, restitué, annulé |
+| Devis | lignes, quantités, TVA configurable, HT/TTC, numérotation, PDF |
+| Documents | devis, bon de dépôt, bon de restitution |
+| Clients | CRUD, recherche, historique, garde-fou de suppression |
+| Suivi client | lien public à jeton aléatoire, sans donnée privée ni montant |
+| Tableau de bord | encaissé réel vs encours estimé, délai moyen, flux 14 jours, performance techniciens |
+| Utilisateurs | admin / technicien, permissions fines, désactivation, réinitialisation |
+| Sauvegardes | export JSON avec empreinte SHA-256, restauration transactionnelle, CLI |
+| Sécurité | sessions hachées, bcrypt, CSRF, rate limiting, audit, Helmet/CSP |
 
 ## Structure
 
 ```
-src/
-  App.tsx              routes, transitions de page, raccourci ⌘K
-  styles.css           tokens (couleurs, matières, typographie) + composants
-  lib/store.tsx        modèle de données, actions, persistance localStorage
-  lib/format.ts        formatage fr-FR (montants, dates, relatifs)
-  components/          Sidebar, TopBar, MobileNav, CommandPalette, Toaster,
-                       ui.tsx (boutons, panneaux, champs, nombres animés),
-                       RepairDetail (panneau latéral), NewRepairDialog
-  pages/               Dashboard, Repairs, Clients, Settings
-site/worker.js         worker statique (sert dist/)
-sites.manifest.json    manifeste de déploiement
-vercel.json            configuration d'import Vercel (SPA)
+src/            front React (pages, composants, client API)
+server/         API Express, Prisma, scripts, tests
+docker/         entrypoint conteneur
+docs/           installation, sauvegarde, développeur, utilisateur, transfert, licences
 ```
 
-## Ce qui fonctionne réellement
+## Documentation
 
-- **Tableau de bord** : CA du mois, dossiers ouverts, délai moyen, objectif — calculés depuis les dossiers (aucune valeur codée en dur dans l'UI). Graphique 14 jours, répartition par statut, priorités, activité récente.
-- **Réparations** : recherche plein texte, filtres par statut, tri (récent / priorité / devis), tableau responsive, fiche latérale.
-- **Suivi d'un dossier** : avancement en 6 étapes cliquables (réception → diagnostic → pièces → réparation → prête → livrée), journal de notes horodatées.
-- **Création d'un dossier** : client existant ou nouveau, catégorie, priorité, devis, validation en ligne.
-- **Clients** : répertoire, recherche, fiche avec historique et total facturé.
-- **Paramètres** : identité de l'atelier, objectif mensuel, export JSON, réinitialisation confirmée.
-- **Persistance** : chaque modification est écrite dans `localStorage` et survit à l'actualisation.
-- **Accessibilité** : navigation clavier, `aria-*` sur les contrôles, respect de `prefers-reduced-motion`, `prefers-reduced-transparency` et `prefers-contrast`.
+- [Installation](./docs/INSTALLATION.md)
+- [Sauvegarde et migration](./docs/SAUVEGARDE.md)
+- [Documentation développeur et API](./docs/DEVELOPPEMENT.md)
+- [Guide utilisateur](./docs/UTILISATEUR.md)
+- [Transfert à un acquéreur](./docs/TRANSFERT.md)
+- [Dépendances et licences](./docs/LICENCES.md)
 
-## Ce qui n'existe pas encore
+## Sécurité et données
 
-Ces points figurent souvent dans les grilles d'évaluation d'un logiciel de gestion d'atelier ; ils
-ne sont **pas implémentés** ici et demanderaient un backend :
+- Les mots de passe ne sont jamais stockés en clair (bcrypt, 12 tours).
+- Les sessions sont des jetons opaques stockés hachés ; cookies `HttpOnly`,
+  `SameSite=Lax`, `Secure` en production.
+- Toutes les mutations exigent un jeton CSRF et une origine autorisée.
+- Le logiciel ne modélise **aucun** champ pour les codes de déverrouillage
+  d’appareil ou les mots de passe des clients.
+- Les liens de suivi n’exposent ni coordonnées, ni notes internes, ni montants.
 
-- **Authentification, comptes, rôles et permissions** — aucun écran de connexion.
-- **Base de données partagée** — les données sont locales au navigateur, donc un dossier créé sur un poste n'apparaît pas sur un autre.
-- **Devis PDF / facturation** — seul un montant estimé est stocké ; aucun document n'est généré, aucun calcul de TVA.
-- **Espace client sécurisé** — le suivi d'une réparation n'est pas exposé au client final.
-- **Notifications e-mail / SMS**, impression, sauvegarde serveur, imports.
-- **Tests automatisés** — aucun test n'est présent ; la validation repose sur le build TypeScript et des vérifications manuelles.
-- **Écrans de connexion et page de vente** — hors périmètre de ce dépôt.
+## Licence
 
-## Notes techniques
+Logiciel commercialisé sous licence perpétuelle non exclusive, avec remise du
+code source. Voir [LICENSE](./LICENSE) et [docs/LICENCES.md](./docs/LICENCES.md)
+pour les composants tiers.
 
-- Les données de démonstration sont générées dans `src/lib/store.tsx` (`createSeed`), avec des dates calculées relativement à la date du jour.
-- La clé de stockage est `atelierpro.state.v1` ; la vider dans les outils du navigateur restaure le jeu de démonstration.
-- Le routage SPA nécessite une réécriture vers `index.html` (fournie dans `vercel.json` et via `"spa": true` dans `sites.manifest.json`).
-- `src/styles.css` centralise le système de design : aucune valeur de couleur ou d'espacement n'est codée en dur dans les composants.
-
-## Licence du skill embarqué
-
-`.agents/skills/apple-design/` contient le skill *apple-design* d'Emil Kowalski
-(https://github.com/emilkowalski/skills), reproduit tel quel, licence MIT incluse dans le dossier.
+Les données de démonstration sont fictives. Toute mise en production doit
+utiliser des comptes et des secrets propres à l’exploitant.

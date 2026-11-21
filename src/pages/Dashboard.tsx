@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { motion } from 'motion/react';
 import {
   AnimatedNumber,
@@ -13,120 +13,73 @@ import {
 import { Icon } from '../components/Icon';
 import NewRepairDialog from '../components/NewRepairDialog';
 import RepairDetail from '../components/RepairDetail';
-import { PRIORITY_META, STATUS_FLOW, STATUS_META, useStore } from '../lib/store';
-import { day, daysBetween, money, relative } from '../lib/format';
-
-function localKey(value: string | Date): string {
-  const d = typeof value === 'string' ? new Date(value) : value;
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-    d.getDate(),
-  ).padStart(2, '0')}`;
-}
+import { api } from '../lib/api';
+import { useApi } from '../lib/hooks';
+import { STATUS_META } from '../lib/domain';
+import { day, money, relative } from '../lib/format';
+import { useAuth } from '../lib/auth';
 
 export default function Dashboard() {
-  const { repairs, settings, clientOf } = useStore();
+  const { user } = useAuth();
+  const summary = useApi(() => api.dashboard(), []);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
 
-  const stats = useMemo(() => {
-    const delivered = repairs.filter((repair) => repair.status === 'delivered');
-    const active = repairs.filter((repair) => repair.status !== 'delivered');
-    const now = new Date();
-    const monthDelivered = delivered.filter((repair) => {
-      if (!repair.deliveredAt) return false;
-      const d = new Date(repair.deliveredAt);
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    });
-    const revenue = monthDelivered.reduce((sum, repair) => sum + repair.estimate, 0);
-    const pendingValue = active.reduce((sum, repair) => sum + repair.estimate, 0);
-    const avgDays = delivered.length
-      ? delivered.reduce(
-          (sum, repair) => sum + daysBetween(repair.createdAt, repair.deliveredAt ?? repair.updatedAt),
-          0,
-        ) / delivered.length
-      : 0;
-    const goal = settings.monthlyGoal > 0 ? settings.monthlyGoal : 1;
+  const data = summary.data;
 
-    return {
-      delivered,
-      active,
-      monthDelivered,
-      revenue,
-      pendingValue,
-      avgDays,
-      goalPct: (revenue / goal) * 100,
-      urgent: active.filter((repair) => repair.priority === 'urgent').length,
-    };
-  }, [repairs, settings.monthlyGoal]);
-
-  const series = useMemo(() => {
-    const days = Array.from({ length: 14 }, (_, index) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (13 - index));
-      return d;
-    });
-    const inbound = days.map(
-      (d) => repairs.filter((repair) => localKey(repair.createdAt) === localKey(d)).length,
+  if (summary.loading && !data) {
+    return (
+      <div className="page">
+        <div className="skeleton skeleton--title" />
+        <div className="kpis">
+          {[0, 1, 2, 3].map((index) => (
+            <div key={index} className="skeleton skeleton--card" />
+          ))}
+        </div>
+      </div>
     );
-    const outbound = days.map(
-      (d) =>
-        repairs.filter(
-          (repair) => repair.deliveredAt && localKey(repair.deliveredAt) === localKey(d),
-        ).length,
+  }
+
+  if (summary.error && !data) {
+    return (
+      <div className="page">
+        <EmptyState
+          title="Tableau de bord indisponible"
+          message={summary.error}
+          action={
+            <Button variant="secondary" icon="clock" onClick={summary.reload}>
+              Réessayer
+            </Button>
+          }
+        />
+      </div>
     );
-    const dailyRevenue = days.map((d) =>
-      repairs
-        .filter((repair) => repair.deliveredAt && localKey(repair.deliveredAt) === localKey(d))
-        .reduce((sum, repair) => sum + repair.estimate, 0),
-    );
-    let running = 0;
-    const cumulative = dailyRevenue.map((value) => (running += value));
-    return { days, inbound, outbound, cumulative, max: Math.max(...inbound, ...outbound, 1) };
-  }, [repairs]);
+  }
 
-  const distribution = useMemo(
-    () =>
-      STATUS_FLOW.map((status) => ({
-        status,
-        count: repairs.filter((repair) => repair.status === status).length,
-      })),
-    [repairs],
-  );
+  if (!data) return null;
 
-  const priorities = useMemo(() => {
-    const weight = { urgent: 0, normal: 1, low: 2 } as const;
-    return stats.active
-      .slice()
-      .sort(
-        (a, b) =>
-          weight[a.priority] - weight[b.priority] || b.createdAt.localeCompare(a.createdAt),
-      )
-      .slice(0, 4);
-  }, [stats.active]);
+  const inbound = data.series.map((entry) => entry.received);
+  const outbound = data.series.map((entry) => entry.returned);
+  const max = Math.max(...inbound, ...outbound, 1);
+  const totalRepairs = data.statuses.reduce((sum, entry) => sum + entry.count, 0);
 
-  const recent = useMemo(
-    () =>
-      repairs
-        .slice()
-        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-        .slice(0, 5),
-    [repairs],
-  );
+  let running = 0;
+  const cumulative = data.series.map((entry) => (running += entry.paidCents));
 
   return (
     <div className="page">
       <header className="page__head">
         <div className="page__intro">
           <p className="eyebrow">Vue d’ensemble</p>
-          <h2 className="page__title">Bonjour {settings.technician}.</h2>
+          <h2 className="page__title">Bonjour {user?.name.split(' ')[0] ?? ''}.</h2>
           <p className="page__lede">
-            {stats.active.length} dossiers ouverts · {stats.urgent} urgents ·{' '}
-            {stats.monthDelivered.length} livraisons ce mois
+            {data.counts.active} dossiers ouverts · {data.counts.urgent} urgents ·{' '}
+            {data.counts.ready} prêts à retirer · {data.counts.awaitingQuotes} devis en attente
           </p>
         </div>
         <div className="page__actions">
-          <Button variant="secondary" icon="wrench" onClick={() => setDialogOpen(true)}>
-            Enregistrer une réception
+          <Button variant="secondary" icon="clock" onClick={summary.reload}>
+            Actualiser
           </Button>
           <Button variant="primary" icon="plus" onClick={() => setDialogOpen(true)}>
             Nouvelle réparation
@@ -137,19 +90,19 @@ export default function Dashboard() {
       <section className="kpis" aria-label="Indicateurs clés">
         <article className="kpi">
           <div className="kpi__top">
-            <span className="kpi__label">Chiffre d’affaires</span>
+            <span className="kpi__label">Encaissé ce mois</span>
             <span className="kpi__icon">
               <Icon name="euro" size={16} />
             </span>
           </div>
           <p className="kpi__value">
-            <AnimatedNumber value={stats.revenue} format={money} />
+            <AnimatedNumber value={data.revenue.billedMonthCents} format={(v) => money(v / 100)} />
           </p>
           <div className="kpi__foot">
             <span className="kpi__note">
-              {stats.monthDelivered.length} livraisons · {money(stats.pendingValue)} en attente
+              {money(data.revenue.pendingCents / 100)} de devis en cours (non encaissés)
             </span>
-            <Sparkline data={series.cumulative} tone="accent" />
+            <Sparkline data={cumulative} tone="accent" />
           </div>
         </article>
 
@@ -161,22 +114,26 @@ export default function Dashboard() {
             </span>
           </div>
           <p className="kpi__value">
-            <AnimatedNumber value={stats.active.length} />
+            <AnimatedNumber value={data.counts.active} />
           </p>
           <div className="kpi__foot">
             <span className="kpi__note">
-              {stats.urgent > 0 ? `${stats.urgent} dossiers urgents` : 'Aucune urgence'}
+              {data.counts.urgent > 0
+                ? `${data.counts.urgent} dossiers urgents`
+                : 'Aucune urgence'}
             </span>
             <span className="kpi__chips">
-              {STATUS_FLOW.slice(0, 4).map((status) => {
-                const count = distribution.find((entry) => entry.status === status)?.count ?? 0;
-                if (!count) return null;
-                return (
-                  <span key={status} className={`chip chip--${STATUS_META[status].tone}`}>
-                    {count}
+              {data.statuses
+                .filter((entry) =>
+                  ['DIAGNOSIS', 'QUOTE_SENT', 'PART_ORDERED', 'IN_PROGRESS'].includes(entry.status),
+                )
+                .filter((entry) => entry.count > 0)
+                .slice(0, 4)
+                .map((entry) => (
+                  <span key={entry.status} className={`chip chip--${STATUS_META[entry.status].tone}`}>
+                    {entry.count}
                   </span>
-                );
-              })}
+                ))}
             </span>
           </div>
         </article>
@@ -190,14 +147,14 @@ export default function Dashboard() {
           </div>
           <p className="kpi__value">
             <AnimatedNumber
-              value={stats.avgDays}
+              value={data.avgRepairDays}
               format={(value) => value.toFixed(1).replace('.', ',')}
             />
             <span className="kpi__unit">jours</span>
           </p>
           <div className="kpi__foot">
             <span className="kpi__note">
-              Sur {stats.delivered.length} dossiers livrés au total
+              Sur {data.counts.returnedTotal} dossiers restitués au total
             </span>
           </div>
         </article>
@@ -205,14 +162,16 @@ export default function Dashboard() {
         <article className="kpi">
           <div className="kpi__top">
             <span className="kpi__label">Objectif du mois</span>
-            <span className="kpi__badge">{Math.round(stats.goalPct)} %</span>
+            <span className="kpi__badge">{data.revenue.goalProgress} %</span>
           </div>
           <p className="kpi__value">
-            <AnimatedNumber value={stats.revenue} format={money} />
+            <AnimatedNumber value={data.revenue.billedMonthCents} format={(v) => money(v / 100)} />
           </p>
           <div className="kpi__foot kpi__foot--stack">
-            <Progress value={stats.goalPct} />
-            <span className="kpi__note">Cible {money(settings.monthlyGoal)}</span>
+            <Progress value={data.revenue.goalProgress} />
+            <span className="kpi__note">
+              Cible {money(data.revenue.monthlyGoalCents / 100)}
+            </span>
           </div>
         </article>
       </section>
@@ -222,42 +181,38 @@ export default function Dashboard() {
           <header className="card__head">
             <div>
               <h3 className="card__title">Flux de l’atelier</h3>
-              <p className="card__hint">Réparations reçues et livrées, 14 derniers jours</p>
+              <p className="card__hint">Réparations reçues et restituées, 14 derniers jours</p>
             </div>
             <div className="legend">
               <span className="legend__item">
                 <span className="legend__swatch legend__swatch--in" /> Reçues
               </span>
               <span className="legend__item">
-                <span className="legend__swatch legend__swatch--out" /> Livrées
+                <span className="legend__swatch legend__swatch--out" /> Restituées
               </span>
             </div>
           </header>
 
-          <div
-            className="chart"
-            role="img"
-            aria-label="Réparations reçues et livrées sur les quatorze derniers jours"
-          >
+          <div className="chart" role="img" aria-label="Réparations reçues et restituées">
             <div className="chart__plot">
-              {series.days.map((d, index) => (
-                <div className="chart__col" key={index}>
+              {data.series.map((entry, index) => (
+                <div className="chart__col" key={entry.date}>
                   <div className="chart__pair">
                     <motion.span
                       className="chart__bar chart__bar--in"
                       initial={{ height: 0 }}
-                      animate={{ height: `${(series.inbound[index] / series.max) * 100}%` }}
+                      animate={{ height: `${(entry.received / max) * 100}%` }}
                       transition={{ ...spring, delay: index * 0.015 }}
                     />
                     <motion.span
                       className="chart__bar chart__bar--out"
                       initial={{ height: 0 }}
-                      animate={{ height: `${(series.outbound[index] / series.max) * 100}%` }}
+                      animate={{ height: `${(entry.returned / max) * 100}%` }}
                       transition={{ ...spring, delay: index * 0.015 + 0.04 }}
                     />
                   </div>
                   <span className="chart__tick">
-                    {index % 2 === 0 ? day(d.toISOString()) : ''}
+                    {index % 2 === 0 ? day(`${entry.date}T12:00:00`) : ''}
                   </span>
                 </div>
               ))}
@@ -269,13 +224,12 @@ export default function Dashboard() {
           <header className="card__head">
             <div>
               <h3 className="card__title">Répartition</h3>
-              <p className="card__hint">Tous dossiers confondus</p>
+              <p className="card__hint">{totalRepairs} dossiers en base</p>
             </div>
           </header>
           <ul className="distribution">
-            {distribution.map((entry) => {
-              const total = repairs.length || 1;
-              const pct = (entry.count / total) * 100;
+            {data.statuses.map((entry) => {
+              const pct = totalRepairs ? (entry.count / totalRepairs) * 100 : 0;
               return (
                 <li key={entry.status} className="distribution__item">
                   <div className="distribution__head">
@@ -305,32 +259,32 @@ export default function Dashboard() {
               <h3 className="card__title">À traiter en priorité</h3>
               <p className="card__hint">Urgences et dossiers bloqués</p>
             </div>
-            <Badge tone="rose">{stats.urgent} urgents</Badge>
+            <Badge tone="rose">{data.counts.urgent} urgents</Badge>
           </header>
 
-          {priorities.length === 0 ? (
-            <EmptyState
-              title="Atelier à jour"
-              message="Aucun dossier en attente : tout est livré."
-            />
+          {data.priorities.length === 0 ? (
+            <EmptyState title="Atelier à jour" message="Aucun dossier en attente." />
           ) : (
             <ul className="mini-list">
-              {priorities.map((repair) => (
+              {data.priorities.map((repair) => (
                 <li key={repair.id}>
                   <button
                     type="button"
                     className="mini-row"
                     onClick={() => setDetailId(repair.id)}
                   >
-                    <Avatar name={clientOf(repair.clientId)?.name ?? 'Client'} size="sm" />
+                    <Avatar name={repair.client.name} size="sm" />
                     <span className="mini-row__main">
-                      <span className="mini-row__title">{repair.device}</span>
+                      <span className="mini-row__title">
+                        {repair.brand} {repair.model}
+                      </span>
                       <span className="mini-row__meta">
-                        {clientOf(repair.clientId)?.name} · {repair.ref} · {money(repair.estimate)}
+                        {repair.client.name} · {repair.reference} ·{' '}
+                        {money(repair.estimateCents / 100)}
                       </span>
                     </span>
                     <span className="mini-row__side">
-                      <Badge tone={PRIORITY_META[repair.priority].tone} dot>
+                      <Badge tone={STATUS_META[repair.status].tone} dot>
                         {STATUS_META[repair.status].short}
                       </Badge>
                       <Icon name="chevronRight" size={15} className="mini-row__chevron" />
@@ -345,31 +299,86 @@ export default function Dashboard() {
         <article className="card">
           <header className="card__head">
             <div>
-              <h3 className="card__title">Dernières interventions</h3>
-              <p className="card__hint">Activité récente du dossier</p>
+              <h3 className="card__title">Activité récente</h3>
+              <p className="card__hint">Journal des dossiers</p>
             </div>
           </header>
 
-          <ul className="activity">
-            {recent.map((repair) => (
-              <li key={repair.id}>
-                <button
-                  type="button"
-                  className="activity__row"
-                  onClick={() => setDetailId(repair.id)}
-                >
-                  <span className="activity__time">{relative(repair.updatedAt)}</span>
-                  <span className="activity__text">
-                    <strong>{repair.ref}</strong> {repair.device}
-                    <em>{STATUS_META[repair.status].label}</em>
-                  </span>
-                  <span className={`dot dot--${STATUS_META[repair.status].tone}`} />
-                </button>
-              </li>
-            ))}
-          </ul>
+          {data.recentEvents.length === 0 ? (
+            <p className="card__footnote">Aucune activité enregistrée.</p>
+          ) : (
+            <ul className="activity">
+              {data.recentEvents.slice(0, 6).map((event) => (
+                <li key={event.id}>
+                  <button
+                    type="button"
+                    className="activity__row"
+                    onClick={() => setDetailId(event.repair.id)}
+                  >
+                    <span className="activity__time">{relative(event.createdAt)}</span>
+                    <span className="activity__text">
+                      <strong>{event.repair.reference}</strong> {event.repair.brand}{' '}
+                      {event.repair.model}
+                      <em>
+                        {event.message ??
+                          (event.type === 'NOTE'
+                            ? 'Note ajoutée'
+                            : event.type === 'STATUS_CHANGE'
+                              ? 'Changement de statut'
+                              : event.type === 'CREATED'
+                                ? 'Dossier créé'
+                                : event.type.replaceAll('_', ' ').toLowerCase())}
+                        {event.actorName ? ` — ${event.actorName}` : ''}
+                      </em>
+                    </span>
+                    <Icon name="chevronRight" size={15} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </article>
       </div>
+
+      <article className="card">
+        <header className="card__head">
+          <div>
+            <h3 className="card__title">Performance des techniciens</h3>
+            <p className="card__hint">Dossiers actifs, restitués et encaissements rattachés</p>
+          </div>
+        </header>
+
+        {data.technicians.length === 0 ? (
+          <p className="card__footnote">
+            Aucun technicien actif. Créez un compte depuis Paramètres → Utilisateurs.
+          </p>
+        ) : (
+          <ul className="perf">
+            {data.technicians.map((technician) => {
+              const total = technician.active + technician.completed;
+              const pct = total ? Math.round((technician.completed / total) * 100) : 0;
+              return (
+                <li key={technician.id} className="perf__row">
+                  <Avatar name={technician.name} size="sm" />
+                  <span className="perf__name">{technician.name}</span>
+                  <span className="perf__metric">
+                    <strong>{technician.active}</strong> actifs
+                  </span>
+                  <span className="perf__metric">
+                    <strong>{technician.completed}</strong> restitués
+                  </span>
+                  <span className="perf__metric perf__metric--money">
+                    {money(technician.billedCents / 100)} encaissés
+                  </span>
+                  <span className="perf__bar">
+                    <Progress value={pct} />
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </article>
 
       <NewRepairDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
       <RepairDetail repairId={detailId} onClose={() => setDetailId(null)} />

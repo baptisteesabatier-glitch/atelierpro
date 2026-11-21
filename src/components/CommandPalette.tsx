@@ -3,8 +3,9 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from './Icon';
 import { Badge, spring } from './ui';
-import { useStore } from '../lib/store';
-import { STATUS_META } from '../lib/store';
+import { api } from '../lib/api';
+import { useApi } from '../lib/hooks';
+import { STATUS_META } from '../lib/domain';
 import { money } from '../lib/format';
 
 interface Result {
@@ -23,12 +24,20 @@ export default function CommandPalette({
   open: boolean;
   onClose: () => void;
 }) {
-  const { repairs, clients, clientOf } = useStore();
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const reduce = useReducedMotion();
+
+  const repairs = useApi(
+    () => (open ? api.repairs() : Promise.resolve({ repairs: [] })),
+    [open],
+  );
+  const clients = useApi(
+    () => (open ? api.clients() : Promise.resolve({ clients: [] })),
+    [open],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -50,41 +59,51 @@ export default function CommandPalette({
 
   const results = useMemo<Result[]>(() => {
     const q = query.trim().toLowerCase();
-    const repairHits = repairs
+    const repairHits = (repairs.data?.repairs ?? [])
       .filter((repair) => {
         if (!q) return true;
-        const client = clientOf(repair.clientId);
-        return [repair.ref, repair.device, repair.issue, client?.name ?? '']
+        return [
+          repair.reference,
+          repair.brand,
+          repair.model,
+          repair.client.name,
+          repair.issue,
+        ]
           .join(' ')
           .toLowerCase()
           .includes(q);
       })
-      .slice(0, 5)
+      .slice(0, 6)
       .map<Result>((repair) => ({
         id: repair.id,
         href: `/reparations?open=${repair.id}`,
-        title: `${repair.ref} · ${repair.device}`,
-        meta: `${clientOf(repair.clientId)?.name ?? 'Client'} — ${money(repair.estimate)}`,
+        title: `${repair.reference} · ${repair.brand} ${repair.model}`,
+        meta: `${repair.client.name} — ${money(repair.estimateCents / 100)}`,
         kind: 'Réparation',
         tone: STATUS_META[repair.status].tone,
       }));
 
-    const clientHits = clients
+    const clientHits = (clients.data?.clients ?? [])
       .filter((client) =>
-        q ? [client.name, client.email, client.city].join(' ').toLowerCase().includes(q) : false,
+        q
+          ? [client.name, client.email ?? '', client.city ?? '', client.phone]
+              .join(' ')
+              .toLowerCase()
+              .includes(q)
+          : false,
       )
-      .slice(0, 3)
+      .slice(0, 4)
       .map<Result>((client) => ({
         id: client.id,
         href: `/clients?open=${client.id}`,
         title: client.name,
-        meta: `${client.city} · ${client.phone}`,
+        meta: [client.city, client.phone].filter(Boolean).join(' · '),
         kind: 'Client',
         tone: 'slate',
       }));
 
     return [...repairHits, ...clientHits];
-  }, [query, repairs, clients, clientOf]);
+  }, [query, repairs.data, clients.data]);
 
   useEffect(() => {
     setCursor(0);
@@ -128,11 +147,11 @@ export default function CommandPalette({
                 onKeyDown={(event) => {
                   if (event.key === 'ArrowDown') {
                     event.preventDefault();
-                    setCursor((c) => Math.min(c + 1, results.length - 1));
+                    setCursor((value) => Math.min(value + 1, results.length - 1));
                   }
                   if (event.key === 'ArrowUp') {
                     event.preventDefault();
-                    setCursor((c) => Math.max(c - 1, 0));
+                    setCursor((value) => Math.max(value - 1, 0));
                   }
                   if (event.key === 'Enter' && results[cursor]) {
                     event.preventDefault();
@@ -144,12 +163,17 @@ export default function CommandPalette({
             </div>
 
             <div className="palette__results">
-              {results.length === 0 && (
-                <p className="palette__empty">Aucun résultat pour « {query} ».</p>
+              {(repairs.loading || clients.loading) && (
+                <p className="palette__empty">Chargement des dossiers…</p>
+              )}
+              {!repairs.loading && !clients.loading && results.length === 0 && (
+                <p className="palette__empty">
+                  {query ? `Aucun résultat pour « ${query} ».` : 'Tapez pour rechercher.'}
+                </p>
               )}
               {results.map((result, index) => (
                 <button
-                  key={result.id}
+                  key={`${result.kind}-${result.id}`}
                   type="button"
                   className={`palette__item${index === cursor ? ' is-cursor' : ''}`}
                   onMouseEnter={() => setCursor(index)}

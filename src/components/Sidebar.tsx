@@ -2,7 +2,8 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Icon, type IconName } from './Icon';
 import { Avatar, IconButton, spring } from './ui';
-import { useStore } from '../lib/store';
+import { useAuth } from '../lib/auth';
+import { useWorkspace } from '../lib/workspace';
 
 interface NavItem {
   to: string;
@@ -76,46 +77,53 @@ function NavList({ items, onNavigate }: { items: NavItem[]; onNavigate?: () => v
 }
 
 function SidebarFooter() {
-  const { settings, repairs } = useStore();
-  const active = repairs.filter((repair) => repair.status !== 'delivered').length;
+  const { user, logout } = useAuth();
+  const { settings, counts } = useWorkspace();
 
   return (
     <div className="sidebar__footer">
       <div className="capacity">
         <div className="capacity__head">
           <span className="capacity__label">Charge en cours</span>
-          <span className="capacity__value">{active} / 24</span>
+          <span className="capacity__value">{counts?.active ?? 0} / 24</span>
         </div>
         <div className="capacity__track" aria-hidden="true">
           <span
             className="capacity__fill"
-            style={{ width: `${Math.min(100, (active / 24) * 100)}%` }}
+            style={{ width: `${Math.min(100, ((counts?.active ?? 0) / 24) * 100)}%` }}
           />
         </div>
       </div>
 
-      <NavLink to="/parametres" className="user">
-        <Avatar name={settings.technician} size="sm" />
+      <div className="user">
+        <Avatar name={user?.name ?? 'Compte'} size="sm" />
         <span className="user__text">
-          <span className="user__name">{settings.technician}</span>
-          <span className="user__role">{settings.shopName}</span>
+          <span className="user__name">{user?.name}</span>
+          <span className="user__role">
+            {user?.role === 'ADMIN' ? 'Administrateur' : 'Technicien'} ·{' '}
+            {settings?.companyName ?? 'Atelier'}
+          </span>
         </span>
-        <Icon name="chevronRight" size={15} className="user__chevron" />
-      </NavLink>
+        <IconButton label="Se déconnecter" icon="arrowUpRight" size={16} onClick={() => void logout()} />
+      </div>
     </div>
   );
 }
 
 export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { repairs, clients } = useStore();
-  const active = repairs.filter((repair) => repair.status !== 'delivered').length;
+  const { user } = useAuth();
+  const { counts } = useWorkspace();
+  const reduce = useReducedMotion();
+
   const items: NavItem[] = [
     { to: '/', label: 'Tableau de bord', icon: 'grid' },
-    { to: '/reparations', label: 'Réparations', icon: 'wrench', badge: active },
-    { to: '/clients', label: 'Clients', icon: 'users', badge: clients.length },
+    { to: '/reparations', label: 'Réparations', icon: 'wrench', badge: counts?.active },
+    { to: '/clients', label: 'Clients', icon: 'users', badge: counts?.clients },
+    ...(user?.role === 'ADMIN'
+      ? [{ to: '/utilisateurs', label: 'Utilisateurs', icon: 'users' as IconName }]
+      : []),
     { to: '/parametres', label: 'Paramètres', icon: 'settings' },
   ];
-  const reduce = useReducedMotion();
 
   return (
     <>

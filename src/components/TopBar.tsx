@@ -1,14 +1,16 @@
 import { useLocation } from 'react-router-dom';
 import { Icon } from './Icon';
 import { Avatar, IconButton } from './ui';
-import { useStore } from '../lib/store';
+import { useAuth } from '../lib/auth';
+import { useWorkspace } from '../lib/workspace';
 import { fullDate } from '../lib/format';
 
 const TITLES: Record<string, { title: string; sub: string }> = {
   '/': { title: 'Tableau de bord', sub: 'Vue d’ensemble de l’atelier' },
   '/reparations': { title: 'Réparations', sub: 'Suivi des interventions' },
   '/clients': { title: 'Clients', sub: 'Répertoire et historique' },
-  '/parametres': { title: 'Paramètres', sub: 'Identité et données' },
+  '/utilisateurs': { title: 'Utilisateurs', sub: 'Comptes et permissions' },
+  '/parametres': { title: 'Paramètres', sub: 'Identité, sécurité et données' },
 };
 
 export default function TopBar({
@@ -19,7 +21,8 @@ export default function TopBar({
   onOpenSearch: () => void;
 }) {
   const location = useLocation();
-  const { settings } = useStore();
+  const { user } = useAuth();
+  const { settings, counts } = useWorkspace();
   const meta = TITLES[location.pathname] ?? TITLES['/'];
   const today = fullDate(new Date().toISOString());
 
@@ -34,7 +37,7 @@ export default function TopBar({
             onClick={onOpenNav}
           />
           <div className="topbar__titles">
-            <p className="topbar__eyebrow">{settings.shopName}</p>
+            <p className="topbar__eyebrow">{settings?.companyName ?? 'AtelierPro'}</p>
             <h1 className="topbar__title">{meta.title}</h1>
           </div>
         </div>
@@ -49,8 +52,13 @@ export default function TopBar({
 
         <div className="topbar__trail">
           <span className="topbar__date">{today}</span>
-          <IconButton label="Notifications" icon="bell" className="topbar__bell" />
-          <Avatar name={settings.technician} size="sm" />
+          {typeof counts?.urgent === 'number' && counts.urgent > 0 && (
+            <span className="topbar__alert" title={`${counts.urgent} dossiers urgents`}>
+              <Icon name="bell" size={16} />
+              {counts.urgent}
+            </span>
+          )}
+          <Avatar name={user?.name ?? 'Compte'} size="sm" />
         </div>
       </div>
     </header>

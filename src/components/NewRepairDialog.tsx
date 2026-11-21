@@ -8,14 +8,11 @@ import {
   TextArea,
   TextInput,
 } from './ui';
-import {
-  CATEGORY_META,
-  useStore,
-  technicians,
-  type DeviceCategory,
-  type Priority,
-} from '../lib/store';
 import { toast } from './Toaster';
+import { api, type DeviceCategory, type Priority, type User } from '../lib/api';
+import { useApi } from '../lib/hooks';
+import { CATEGORY_META } from '../lib/domain';
+import { useAuth } from '../lib/auth';
 
 const NEW_CLIENT = '__new__';
 
@@ -23,41 +20,65 @@ export default function NewRepairDialog({
   open,
   onClose,
   presetClientId,
+  onCreated,
 }: {
   open: boolean;
   onClose: () => void;
   presetClientId?: string;
+  onCreated?: () => void;
 }) {
-  const { clients, addClient, addRepair, settings } = useStore();
+  const { user } = useAuth();
+  const clients = useApi(() => api.clients(), [open]);
+  const users = useApi(
+    () => (user?.role === 'ADMIN' ? api.users() : Promise.resolve({ users: [] as User[] })),
+    [open, user?.role],
+  );
 
-  const [clientId, setClientId] = useState(presetClientId ?? clients[0]?.id ?? NEW_CLIENT);
+  const [clientId, setClientId] = useState(NEW_CLIENT);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [address, setAddress] = useState('');
+  const [postalCode, setPostalCode] = useState('');
   const [city, setCity] = useState('');
-  const [device, setDevice] = useState('');
-  const [category, setCategory] = useState<DeviceCategory>('phone');
+  const [brand, setBrand] = useState('');
+  const [model, setModel] = useState('');
+  const [category, setCategory] = useState<DeviceCategory>('PHONE');
+  const [serialNumber, setSerialNumber] = useState('');
   const [issue, setIssue] = useState('');
-  const [priority, setPriority] = useState<Priority>('normal');
-  const [estimate, setEstimate] = useState('120');
-  const [technician, setTechnician] = useState(settings.technician || technicians[0]);
+  const [diagnosis, setDiagnosis] = useState('');
+  const [priority, setPriority] = useState<Priority>('NORMAL');
+  const [estimate, setEstimate] = useState('0');
+  const [technician, setTechnician] = useState('');
+  const [busy, setBusy] = useState(false);
   const [touched, setTouched] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const list = clients.data?.clients ?? [];
+  const technicians = (users.data?.users ?? []).filter((entry) => entry.active);
 
   useEffect(() => {
     if (!open) return;
-    setClientId(presetClientId ?? clients[0]?.id ?? NEW_CLIENT);
+    setClientId(presetClientId ?? list[0]?.id ?? NEW_CLIENT);
     setName('');
     setPhone('');
     setEmail('');
+    setAddress('');
+    setPostalCode('');
     setCity('');
-    setDevice('');
-    setCategory('phone');
+    setBrand('');
+    setModel('');
+    setCategory('PHONE');
+    setSerialNumber('');
     setIssue('');
-    setPriority('normal');
-    setEstimate('120');
-    setTechnician(settings.technician || technicians[0]);
+    setDiagnosis('');
+    setPriority('NORMAL');
+    setEstimate('0');
+    setTechnician(user ? '' : '');
     setTouched(false);
-  }, [open, presetClientId, clients, settings.technician]);
+    setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, presetClientId, clients.data, user?.id]);
 
   const creatingClient = clientId === NEW_CLIENT;
 
@@ -65,15 +86,14 @@ export default function NewRepairDialog({
     const next: Record<string, string> = {};
     if (creatingClient && name.trim().length < 2) next.name = 'Indiquez le nom du client.';
     if (creatingClient && phone.trim().length < 6) next.phone = 'Un numéro joignable est requis.';
-    if (device.trim().length < 2) next.device = 'Précisez l’appareil (modèle).';
+    if (brand.trim().length < 1) next.brand = 'Marque requise.';
+    if (model.trim().length < 1) next.model = 'Modèle requis.';
     if (issue.trim().length < 5) next.issue = 'Décrivez la panne en quelques mots.';
-    if (Number.isNaN(Number(estimate)) || Number(estimate) < 0) {
-      next.estimate = 'Montant invalide.';
-    }
+    if (Number.isNaN(Number(estimate.replace(',', '.')))) next.estimate = 'Montant invalide.';
     return next;
-  }, [creatingClient, name, phone, device, issue, estimate]);
+  }, [creatingClient, name, phone, brand, model, issue, estimate]);
 
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
     setTouched(true);
     if (Object.keys(errors).length > 0) {
@@ -81,29 +101,44 @@ export default function NewRepairDialog({
       return;
     }
 
-    let targetId = clientId;
-    if (creatingClient) {
-      const created = addClient({
-        name: name.trim(),
-        email: email.trim(),
-        phone: phone.trim(),
-        city: city.trim() || '—',
+    setBusy(true);
+    setError(null);
+    try {
+      let targetId = clientId;
+      if (creatingClient) {
+        const created = await api.createClient({
+          name: name.trim(),
+          phone: phone.trim(),
+          email: email.trim() || undefined,
+          address: address.trim() || undefined,
+          postalCode: postalCode.trim() || undefined,
+          city: city.trim() || undefined,
+        });
+        targetId = created.client.id;
+      }
+
+      const created = await api.createRepair({
+        clientId: targetId,
+        category,
+        brand: brand.trim(),
+        model: model.trim(),
+        serialNumber: serialNumber.trim() || undefined,
+        issue: issue.trim(),
+        diagnosis: diagnosis.trim() || undefined,
+        estimateCents: Math.round((Number(estimate.replace(',', '.')) || 0) * 100),
+        priority,
+        assignedToId: technician || undefined,
       });
-      targetId = created.id;
+
+      toast(`Dossier ${created.repair.reference} créé`);
+      clients.reload();
+      onCreated?.();
+      onClose();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Création impossible.');
+    } finally {
+      setBusy(false);
     }
-
-    const repair = addRepair({
-      clientId: targetId,
-      device: device.trim(),
-      category,
-      issue: issue.trim(),
-      priority,
-      estimate: Number(estimate),
-      technician,
-    });
-
-    toast(`Dossier ${repair.ref} créé`);
-    onClose();
   };
 
   return (
@@ -111,15 +146,21 @@ export default function NewRepairDialog({
       open={open}
       onClose={onClose}
       title="Nouvelle réparation"
-      description="Un dossier clair dès la réception : appareil, panne, devis."
-      width={620}
+      description="Appareil, panne et client : le dossier est enregistré en base immédiatement."
+      width={660}
       footer={
         <>
           <Button variant="quiet" onClick={onClose}>
             Annuler
           </Button>
-          <Button variant="primary" type="submit" form="new-repair" icon="plus">
-            Créer le dossier
+          <Button
+            variant="primary"
+            type="submit"
+            form="new-repair"
+            icon="plus"
+            disabled={busy}
+          >
+            {busy ? 'Création…' : 'Créer le dossier'}
           </Button>
         </>
       }
@@ -132,27 +173,31 @@ export default function NewRepairDialog({
               value={clientId}
               onChange={(event) => setClientId(event.target.value)}
             >
-              {clients.map((client) => (
+              {list.map((client) => (
                 <option key={client.id} value={client.id}>
-                  {client.name} — {client.city}
+                  {client.name}
+                  {client.city ? ` — ${client.city}` : ''}
                 </option>
               ))}
               <option value={NEW_CLIENT}>+ Nouveau client…</option>
             </Select>
           </Field>
-          <Field label="Technicien" htmlFor="repair-tech">
-            <Select
-              id="repair-tech"
-              value={technician}
-              onChange={(event) => setTechnician(event.target.value)}
-            >
-              {technicians.map((person) => (
-                <option key={person} value={person}>
-                  {person}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          {user?.role === 'ADMIN' && (
+            <Field label="Technicien" htmlFor="repair-tech">
+              <Select
+                id="repair-tech"
+                value={technician}
+                onChange={(event) => setTechnician(event.target.value)}
+              >
+                <option value="">Non affecté</option>
+                {technicians.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
         </div>
 
         {creatingClient && (
@@ -205,22 +250,37 @@ export default function NewRepairDialog({
                 />
               </Field>
             </div>
+            <Field label="Adresse postale" htmlFor="repair-address" hint="Facultatif">
+              <TextInput
+                id="repair-address"
+                value={address}
+                onChange={(event) => setAddress(event.target.value)}
+                placeholder="12 rue des Artisans"
+              />
+            </Field>
           </div>
         )}
 
         <div className="form__row">
-          <Field
-            label="Appareil"
-            htmlFor="repair-device"
-            error={touched ? errors.device : undefined}
-          >
+          <Field label="Marque" htmlFor="repair-brand" error={touched ? errors.brand : undefined}>
             <TextInput
-              id="repair-device"
-              value={device}
-              onChange={(event) => setDevice(event.target.value)}
-              placeholder="iPhone 14 Pro, MacBook Air…"
+              id="repair-brand"
+              value={brand}
+              onChange={(event) => setBrand(event.target.value)}
+              placeholder="Apple, Samsung, Dell…"
             />
           </Field>
+          <Field label="Modèle" htmlFor="repair-model" error={touched ? errors.model : undefined}>
+            <TextInput
+              id="repair-model"
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+              placeholder="iPhone 14 Pro"
+            />
+          </Field>
+        </div>
+
+        <div className="form__row">
           <Field label="Catégorie" htmlFor="repair-category">
             <Select
               id="repair-category"
@@ -233,6 +293,14 @@ export default function NewRepairDialog({
                 </option>
               ))}
             </Select>
+          </Field>
+          <Field label="N° de série" htmlFor="repair-serial" hint="Facultatif">
+            <TextInput
+              id="repair-serial"
+              value={serialNumber}
+              onChange={(event) => setSerialNumber(event.target.value)}
+              placeholder="SN…"
+            />
           </Field>
         </div>
 
@@ -250,6 +318,16 @@ export default function NewRepairDialog({
           />
         </Field>
 
+        <Field label="Diagnostic initial" htmlFor="repair-diagnosis" hint="Facultatif à la réception">
+          <TextArea
+            id="repair-diagnosis"
+            value={diagnosis}
+            onChange={(event) => setDiagnosis(event.target.value)}
+            rows={2}
+            placeholder="Premier constat technique…"
+          />
+        </Field>
+
         <div className="form__row">
           <Field label="Priorité" htmlFor="repair-priority">
             <Segmented
@@ -258,29 +336,31 @@ export default function NewRepairDialog({
               value={priority}
               onChange={setPriority}
               options={[
-                { value: 'low', label: 'Basse' },
-                { value: 'normal', label: 'Normale' },
-                { value: 'urgent', label: 'Urgente' },
+                { value: 'LOW', label: 'Basse' },
+                { value: 'NORMAL', label: 'Normale' },
+                { value: 'URGENT', label: 'Urgente' },
               ]}
             />
           </Field>
           <Field
-            label="Devis (€)"
+            label="Montant estimé (€)"
             htmlFor="repair-estimate"
             error={touched ? errors.estimate : undefined}
-            hint="Montant estimé, modifiable ensuite."
+            hint="Modifiable ensuite dans le dossier."
           >
             <TextInput
               id="repair-estimate"
               type="number"
               min="0"
-              step="1"
+              step="0.01"
               value={estimate}
               onChange={(event) => setEstimate(event.target.value)}
               inputMode="decimal"
             />
           </Field>
         </div>
+
+        {error && <p className="form__error">{error}</p>}
       </form>
     </Modal>
   );
